@@ -2,22 +2,32 @@
 // No key needed.
 const { send, num, fetchT, allowed } = require('./_lib.js');
 
-const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+];
 
+// Ask all mirrors at once and take the first good answer, so one slow or busy server
+// can't hold the app up (the whole lookup is capped at about 9 seconds).
 async function overpass(query) {
-  let lastErr;
-  for (const url of ENDPOINTS) {
-    try {
-      const r = await fetchT(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'GlassesNav/1.0 (personal project)' },
-        body: 'data=' + encodeURIComponent(query),
-      }, 20000);
-      if (r.ok) return await r.json();
-      lastErr = new Error('Map data service busy (' + r.status + ')');
-    } catch (e) { lastErr = e; }
+  const tries = ENDPOINTS.map(async (url) => {
+    const r = await fetchT(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'NavDeck/1.0 (personal smart-glasses app)' },
+      body: 'data=' + encodeURIComponent(query),
+    }, 9000);
+    if (!r.ok) throw new Error('Map data service busy (' + r.status + ')');
+    const j = await r.json();
+    if (!j || !Array.isArray(j.elements)) throw new Error('Map data service returned nothing');
+    return j;
+  });
+  try {
+    return await Promise.any(tries);
+  } catch (e) {
+    const first = e && e.errors && e.errors[0];
+    throw new Error((first && first.message) || 'Map data service unavailable — try again in a moment');
   }
-  throw lastErr || new Error('Map data service unavailable');
 }
 
 module.exports = async (req, res) => {
@@ -28,7 +38,7 @@ module.exports = async (req, res) => {
 
   try {
     if (type === 'bus') {
-      const j = await overpass(`[out:json][timeout:20];
+      const j = await overpass(`[out:json][timeout:8];
 (
   node(around:700,${lat},${lon})["highway"="bus_stop"];
   node(around:700,${lat},${lon})["public_transport"="platform"]["bus"="yes"];
@@ -53,7 +63,7 @@ out body 80;`);
       return send(res, 200, { results }, 86400);
     }
 
-    const j = await overpass(`[out:json][timeout:20];
+    const j = await overpass(`[out:json][timeout:8];
 nwr(around:25000,${lat},${lon})["railway"="station"]["ref:crs"];
 out center;`);
     const seen = new Set();

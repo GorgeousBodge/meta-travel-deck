@@ -74,7 +74,10 @@
 .row .ico { font-size: 30px; color: var(--accent); }
 
 /* --- Destination search ------------------------------------------------ */
-.dest-top { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px var(--pad) 0; }
+.dest-top { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; padding: 12px var(--pad) 0; }
+.dest-top .clear-key { width: 56px; height: 56px; }
+.dest-top .clear-key[hidden] { display: none; }
+.dest-top .clear-key .ico { font-size: 24px; }
 .field-wrap {
   position: relative;
   display: flex;
@@ -111,7 +114,8 @@
 .field::placeholder { color: var(--dim); font-family: var(--font-display); letter-spacing: .08em; text-transform: uppercase; font-size: 16px; }
 .field::-webkit-search-cancel-button { display: none; }
 .dest-top .tabs { padding: 0; gap: 8px; }
-.dest-top .tab { min-width: 76px; height: 56px; }
+.dest-top .tabs { overflow: visible; }
+.dest-top .tab { flex: 0 0 auto; min-width: 66px; padding: 0 8px; height: 56px; font-size: 14px; }
 
 /* --- Route preview + guidance ------------------------------------------ */
 .pv, .gd { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px var(--pad) 12px; }
@@ -261,3 +265,4 @@
 
 /* spans inside buttons stack as blocks */
 .row-main, .row-title, .row-sub, .dep-main, .dep-dest, .dep-sub { display: block; }
+.dest-top .field-wrap { min-width: 0; }

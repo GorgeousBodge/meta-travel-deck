@@ -1,7 +1,8 @@
 // Shared helpers for the server functions. Files starting with "_" are not exposed as routes on Vercel.
 
-// Keys are letters and numbers only: strip anything else (stray spaces, quotes, newlines from pasting).
-const cleanKey = (v) => String(v || '').replace(/[^A-Za-z0-9]/g, '');
+// Keep letters, numbers and the symbols base64-style keys use (= + / - _), e.g. HEIGIT/openrouteservice
+// keys ending in "=". Strip everything else (stray spaces, quotes, newlines from pasting).
+const cleanKey = (v) => String(v || '').replace(/[^A-Za-z0-9=+/_-]/g, '');
 
 function send(res, status, body, cacheSeconds) {
   res.setHeader('Content-Type', 'application/json; charset=utf-8');

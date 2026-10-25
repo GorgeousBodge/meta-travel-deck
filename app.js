@@ -38,6 +38,8 @@ const S = {
   query: '', results: [], choices: [],
   timer: null, watch: null,
   expanded: new Set(),
+  demo: /[?&]demo\b/.test(location.search),
+  sim: null, simAlong: 0,
 };
 
 // ---------------------------------------------------------------- formatting
@@ -103,6 +105,7 @@ function say(text, lang = 'en-GB') {
 })();
 
 async function api(path, params) {
+  if (S.demo) return NavDemo.api(path, params || {});
   const q = new URLSearchParams(params || {});
   const code = store.get('code', '');
   if (code) q.set('c', code);
@@ -113,7 +116,11 @@ async function api(path, params) {
   try {
     const r = await fetch(url, { signal: ctrl.signal });
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401 && j.locked) { showLock(j.error); throw new Error(j.error); }
+    if (r.status === 401 && j.locked) {
+      // No code on these glasses yet -> demo mode; a saved code that's wrong -> lock screen
+      if (store.get('code', '')) showLock(j.error); else enterDemo();
+      throw new Error(j.error);
+    }
     if (!r.ok) throw new Error(j.error || 'Server error ' + r.status);
     return j;
   } catch (e) {
@@ -122,8 +129,18 @@ async function api(path, params) {
   } finally { clearTimeout(t); }
 }
 
+function enterDemo() {
+  if (S.demo) return;
+  S.demo = true;
+  S.route = null;
+  S.pos = null;
+  toast('Demo mode · sample data', 3500);
+  updateGps();
+  S.gen++;
+  goHome();
+}
+
 function showLock(msg) {
-  if (S.screen === 'lock') return;
   stopTimers();
   stopGuidance();
   S.gen++;               // drop whatever the current screen was waiting for
@@ -136,7 +153,10 @@ function showLock(msg) {
     <label class="field-wrap" style="width:100%;max-width:460px">${icon('lock')}
       <input id="codeIn" class="field" type="text" placeholder="Access code" aria-label="Access code" autocomplete="off" spellcheck="false">
     </label>
-    ${key('saveCode', 'check', 'Unlock', { cls: 'key-speak' })}
+    <div class="keys">
+      ${key('saveCode', 'check', 'Unlock', { cls: 'key-speak' })}
+      ${key('demoMode', 'resume', 'Try demo')}
+    </div>
   </div>`;
   requestAnimationFrame(() => { const i = $('#codeIn'); if (i) i.focus(); });
 }
@@ -159,6 +179,10 @@ function setPos(p) {
   updateGps();
 }
 function locate() {
+  if (S.demo) {
+    if (!S.pos || !S.sim) setPos({ lat: NavDemo.start.lat, lon: NavDemo.start.lon, acc: 5, heading: null, speed: 0, t: Date.now() });
+    return Promise.resolve(S.pos);
+  }
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Location not supported'));
     navigator.geolocation.getCurrentPosition(
@@ -192,6 +216,7 @@ const HINTS = {
 };
 function updateGps() {
   const el = $('#gps'), dot = $('#dot');
+  if (S.demo) { el.textContent = 'DEMO'; dot.dataset.status = 'demo'; return; }
   if (!S.pos) {
     el.textContent = S.geoErr ? 'NO GPS' : 'GPS';
     dot.dataset.status = S.geoErr ? 'offline' : '';
@@ -326,7 +351,7 @@ function toggleIn(storeKey, item, k) {
 // ================================================================ SCREENS
 
 function home() {
-  setHeader('Nav', 'Deck');
+  setHeader('Nav', S.demo ? 'Demo' : 'Deck');
   setHints(HINTS.home);
   const resume = S.route && !S.route.arrived && S.dest;
   app.innerHTML = `<div class="home-grid">
@@ -335,7 +360,9 @@ function home() {
     ${tile('goStops', 'bus', 'Buses', 'Nearby stops')}
     ${resume
       ? tile('resume', 'resume', 'Resume', S.dest.name, { cls: 'is-on' })
-      : tile('locate', 'locate', 'Locate', S.pos ? '±' + Math.round(S.pos.acc) + ' m fix' : 'Get GPS fix')}
+      : S.demo
+        ? tile('unlock', 'lock', 'Unlock', 'Demo mode · enter code', { cls: 'is-on' })
+        : tile('locate', 'locate', 'Locate', S.pos ? '±' + Math.round(S.pos.acc) + ' m fix' : 'Get GPS fix')}
   </div>`;
   focusFirst();
 }
@@ -586,7 +613,28 @@ function guide() {
   focusFirst();
 }
 
+// Demo: walk (or ride) along the route at a few times real speed
+function startSim() {
+  if (S.sim) return;
+  const r = S.route;
+  S.simAlong = r.along || 0;
+  S.sim = setInterval(() => {
+    const rr = S.route;
+    if (!rr || rr.arrived) { clearInterval(S.sim); S.sim = null; return; }
+    S.simAlong = Math.min(rr.total, S.simAlong + (rr.mode === 'cycling-regular' ? 16 : 8));
+    let i = 0;
+    while (i < rr.cum.length - 2 && rr.cum[i + 1] < S.simAlong) i++;
+    const seg = rr.cum[i + 1] - rr.cum[i] || 1;
+    const t = Math.min(1, (S.simAlong - rr.cum[i]) / seg);
+    const a = rr.coords[i], b = rr.coords[Math.min(i + 1, rr.coords.length - 1)];
+    const p = { lat: a[0] + (b[0] - a[0]) * t, lon: a[1] + (b[1] - a[1]) * t };
+    setPos({ ...p, acc: 5, heading: bearing({ lat: a[0], lon: a[1] }, { lat: b[0], lon: b[1] }), speed: 4, t: Date.now() });
+    progress();
+  }, 1000);
+}
+
 function startGuidance() {
+  if (S.demo) return startSim();
   if (S.watch != null || !navigator.geolocation) return;
   S.watch = navigator.geolocation.watchPosition(
     (p) => { setPos(toPos(p)); progress(); },
@@ -602,6 +650,7 @@ function startGuidance() {
 }
 function stopGuidance() {
   if (S.watch != null) { navigator.geolocation.clearWatch(S.watch); S.watch = null; }
+  if (S.sim) { clearInterval(S.sim); S.sim = null; }
   stopCompass();
   try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch { /* ignore */ }
 }
@@ -1027,12 +1076,27 @@ function setKeyOn(b, on, label) {
 
 const ACTIONS = {
   noop() {},
-  saveCode() {
+  async saveCode() {
     const v = ($('#codeIn') || {}).value || '';
     if (!v.trim()) return toast('Enter the code first', 2500, true);
     store.set('code', v.trim());
-    toast('Code saved');
-    render(history.state || { screen: 'home', depth: 1 });
+    S.demo = false;
+    S.route = null;
+    S.pos = null;
+    updateGps();
+    try {
+      await api('status');          // a wrong code comes back to the lock screen
+      toast('Unlocked');
+      S.gen++;
+      goHome();
+      render({ screen: 'home', depth: 1 });
+    } catch { /* lock screen already shown */ }
+  },
+  unlock() { showLock('Enter your access code'); },
+  demoMode() {
+    S.demo = false;               // let enterDemo switch cleanly
+    enterDemo();
+    render({ screen: 'home', depth: 1 });
   },
   retry() { render(history.state || { screen: 'home', depth: 1 }); },
   goDest() { S.results = []; S.query = ''; lastSearch = ''; go('dest'); },
@@ -1150,4 +1214,5 @@ document.addEventListener('visibilitychange', () => {
 });
 history.replaceState({ screen: 'home', params: {}, depth: 1 }, '');
 render(history.state);
-api('status').catch(() => { /* shows the lock screen if a code is needed */ });
+if (S.demo) toast('Demo mode · sample data', 3500);
+else api('status').catch(() => { /* no code: demo mode; wrong code: lock screen */ });

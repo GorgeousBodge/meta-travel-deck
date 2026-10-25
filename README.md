@@ -1,3 +1,4 @@
+[README.md](https://github.com/user-attachments/files/33938969/README.md)
 # Nav Deck
 
 Walking and cycling directions with live train and bus times for **Meta Ray-Ban Display** glasses. Turn-by-turn guidance on OpenStreetMap, a street map you can flick to for a sense of distance, and live departure boards for any station or bus stop in Great Britain. Built for the Display's 600×600 screen and the Neural Band.
@@ -10,7 +11,7 @@ Walking and cycling directions with live train and bus times for **Meta Ray-Ban 
 - **Live buses:** real-time where operators provide it, timetabled times otherwise
 - **Finds what's near you:** nearest stations and stops from your phone's GPS, plus your saved ones
 - **Reroutes itself** if you go off course
-- **Keys stay on the server:** the page never sees your API keys, and an access code stops strangers using your allowances
+- **Keys stay on the server:** the page never sees your API keys, and an access code stops strangers using your allowances. Without the code, visitors get a working demo instead
 
 | Home | Guidance (street map) |
 |---|---|
@@ -33,6 +34,7 @@ style.css
 nav.css
 app.js
 streetmap.js
+demo.js
 places.js
 icon-96.png
 api/_lib.js
@@ -112,6 +114,9 @@ In the Meta AI app, add a web app with the address `https://YOUR-PROJECT.vercel.
 | Back | Anywhere | Go back a screen (the HUD back button does the same) |
 
 Train boards refresh every 30 seconds while open. Bus stops refresh when you press Refresh.
+
+### Demo mode
+Without the access code, the app opens in **demo mode** (an amber **DEMO** light in the top bar). Everything works with sample data made on the glasses: searches, a simulated walk or ride along your route, and example train and bus boards. It never contacts your server, so it costs you nothing and needs no keys. Pinch **Unlock** to enter the code. Add `?demo` to the address to try demo mode at any time.
 
 ---
 

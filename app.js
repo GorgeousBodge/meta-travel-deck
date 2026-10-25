@@ -183,15 +183,28 @@ function locate() {
     if (!S.pos || !S.sim) setPos({ lat: NavDemo.start.lat, lon: NavDemo.start.lon, acc: 5, heading: null, speed: 0, t: Date.now() });
     return Promise.resolve(S.pos);
   }
+  // Our own deadline: on the glasses the position comes from the paired phone and can hang
   return new Promise((resolve, reject) => {
     if (!navigator.geolocation) return reject(new Error('Location not supported'));
-    navigator.geolocation.getCurrentPosition(
-      (p) => { setPos(toPos(p)); resolve(S.pos); },
-      (e) => { S.geoErr = true; updateGps(); reject(new Error(geoMsg(e))); },
-      { timeout: 15000 },
-    );
+    let done = false;
+    const finish = (fn, v) => { if (!done) { done = true; clearTimeout(timer); fn(v); } };
+    const fail = (msg) => {
+      S.geoErr = true; updateGps();
+      if (S.pos) { toast('Using last known position', 2500); finish(resolve, S.pos); }
+      else finish(reject, new Error(msg));
+    };
+    const timer = setTimeout(() => fail('No location from your phone yet. Check the phone is nearby, connected, and location is on for the Meta AI app.'), 14000);
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => { setPos(toPos(p)); finish(resolve, S.pos); },
+        (e) => fail(geoMsg(e)),
+        { timeout: 12000 },
+      );
+    } catch (e) { fail('Location unavailable'); }
   });
 }
+// Show which step a screen is waiting on
+const stage = (msg) => { const t = app.querySelector('.state .state-title'); if (t) t.textContent = msg; };
 async function getPos(maxAgeMs = 45000) {
   if (S.pos && Date.now() - S.pos.t < maxAgeMs) return S.pos;
   return locate();
@@ -419,9 +432,11 @@ async function search(text) {
   S.query = text;
   const gen = S.gen;
   const list = $('#list');
-  if (list) list.innerHTML = loading('Scanning');
+  if (list) list.innerHTML = loading('Getting location');
   let bias = CENTRE;
   try { bias = await getPos(120000); } catch { /* search without GPS */ }
+  if (gen !== S.gen) return;
+  { const t = $('#list .state-title'); if (t) t.textContent = 'Searching'; }
   try {
     const j = await api('geocode', { text, lat: bias.lat.toFixed(4), lon: bias.lon.toFixed(4) });
     if (gen !== S.gen) return;
@@ -493,9 +508,11 @@ async function preview() {
   setHints(HINTS.list);
   if (!S.dest) return goHome();
   const gen = S.gen;
-  app.innerHTML = loading('Plotting route');
+  app.innerHTML = loading('Getting location');
   try {
     const pos = await getPos();
+    if (gen !== S.gen) return;
+    stage('Plotting route');
     await fetchRoute(pos, S.dest);
     if (gen !== S.gen) return;
     renderPreview();
@@ -904,10 +921,12 @@ async function stations() {
   setHeader('Trains', 'Stations');
   setHints(HINTS.list);
   const gen = S.gen;
-  app.innerHTML = loading('Locating stations');
+  app.innerHTML = loading('Getting location');
   let near = [], note = '';
   try {
     const pos = await getPos();
+    if (gen !== S.gen) return;
+    stage('Finding stations');
     const j = await api('nearby', { type: 'rail', lat: pos.lat.toFixed(3), lon: pos.lon.toFixed(3) });
     near = (j.results || []).map((s) => ({ ...s, dist: haversine(pos, s) })).sort((a, b) => a.dist - b.dist);
   } catch (e) { note = e.message; }
@@ -992,10 +1011,12 @@ async function stops() {
   setHeader('Buses', 'Stops');
   setHints(HINTS.list);
   const gen = S.gen;
-  app.innerHTML = loading('Scanning stops');
+  app.innerHTML = loading('Getting location');
   let near = [], note = '';
   try {
     const pos = await getPos();
+    if (gen !== S.gen) return;
+    stage('Finding stops');
     const j = await api('nearby', { type: 'bus', lat: pos.lat.toFixed(4), lon: pos.lon.toFixed(4) });
     near = (j.results || []).map((s) => ({ ...s, dist: haversine(pos, s) })).sort((a, b) => a.dist - b.dist).slice(0, 10);
   } catch (e) { note = e.message; }
@@ -1215,4 +1236,7 @@ document.addEventListener('visibilitychange', () => {
 history.replaceState({ screen: 'home', params: {}, depth: 1 }, '');
 render(history.state);
 if (S.demo) toast('Demo mode · sample data', 3500);
-else api('status').catch(() => { /* no code: demo mode; wrong code: lock screen */ });
+else {
+  api('status').catch(() => { /* no code: demo mode; wrong code: lock screen */ });
+  locate().catch(() => { /* first fix in the background; screens retry when needed */ });
+}

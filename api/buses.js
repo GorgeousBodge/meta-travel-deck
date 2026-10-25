@@ -2,7 +2,7 @@
 // Real-time where operators provide it, scheduled times otherwise.
 // Free plan = 30 requests/day, so responses are cached at Vercel's edge for 90 s per stop,
 // and the app only refreshes when you ask (unless BUS_REFRESH_SECONDS is set for a paid plan).
-const { cleanKey, send, fetchT } = require('./_lib.js');
+const { cleanKey, send, fetchT, allowed } = require('./_lib.js');
 
 // "2026-10-25" + "17:42" (UK local time) -> ISO string with the right offset (GMT or BST)
 function londonISO(date, time) {
@@ -17,6 +17,7 @@ function londonISO(date, time) {
 }
 
 module.exports = async (req, res) => {
+  if (!allowed(req, res)) return;
   const appId = cleanKey(process.env.TRANSPORTAPI_APP_ID);
   const appKey = cleanKey(process.env.TRANSPORTAPI_APP_KEY);
   if (!appId || !appKey) return send(res, 500, { error: 'TRANSPORTAPI_APP_ID / TRANSPORTAPI_APP_KEY are not set in Vercel' });

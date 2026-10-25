@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/33938389/README.md)
 # Nav Deck
 
 Walking and cycling directions with live train and bus times for **Meta Ray-Ban Display** glasses. Turn-by-turn guidance on OpenStreetMap, a street map you can flick to for a sense of distance, and live departure boards for any station or bus stop in Great Britain. Built for the Display's 600×600 screen and the Neural Band.
@@ -11,7 +10,7 @@ Walking and cycling directions with live train and bus times for **Meta Ray-Ban 
 - **Live buses:** real-time where operators provide it, timetabled times otherwise
 - **Finds what's near you:** nearest stations and stops from your phone's GPS, plus your saved ones
 - **Reroutes itself** if you go off course
-- **Keys stay on the server:** the page never sees your API keys
+- **Keys stay on the server:** the page never sees your API keys, and an access code stops strangers using your allowances
 
 | Home | Guidance (street map) |
 |---|---|
@@ -35,6 +34,7 @@ nav.css
 app.js
 streetmap.js
 places.js
+icon-96.png
 api/_lib.js
 api/route.js
 api/geocode.js
@@ -78,20 +78,21 @@ In Vercel, go to **Settings → Environment Variables** and add:
 | `RAILDATA_API_KEY` | Your Rail Data Marketplace consumer key |
 | `TRANSPORTAPI_APP_ID` | Your TransportAPI app ID |
 | `TRANSPORTAPI_APP_KEY` | Your TransportAPI app key |
+| `APP_CODE` | *Recommended.* Your own access code (letters and numbers). Without it, anyone with your address can use your allowances |
 | `RAILDATA_DEPARTURES_URL` | *Optional.* Only if your Live Departure Board endpoint differs from the default (see Troubleshooting) |
 | `BUS_REFRESH_SECONDS` | *Optional, paid bus plans only.* Turns on bus auto-refresh, e.g. `60` |
 
 Then **Redeploy** (Deployments → ⋯ → Redeploy). Vercel only picks up variable changes on a new deployment.
 
 ### 5. Check it
-Open `https://YOUR-PROJECT.vercel.app/api/status`. You'll see raw data. Look for:
+Open `https://YOUR-PROJECT.vercel.app/api/status?c=YOUR-APP-CODE` (leave off `?c=…` if you haven't set `APP_CODE`). You'll see raw data. Look for:
 - `"set": true` on each key.
 - `"strippedChars": false`. If it says `true`, the key had stray characters such as spaces removed. That's fine unless the key then stops working.
 
-Then try `https://YOUR-PROJECT.vercel.app/api/trains?crs=GLD` for a live Guildford board.
+Then try `https://YOUR-PROJECT.vercel.app/api/trains?crs=GLD&c=YOUR-APP-CODE` for a live Guildford board.
 
 ### 6. Add it to your glasses
-In the Meta AI app, add a web app with the address `https://YOUR-PROJECT.vercel.app`. Use the main project address, not a preview link, as preview links can ask for a Vercel login.
+In the Meta AI app, add a web app with the address `https://YOUR-PROJECT.vercel.app/?code=YOUR-APP-CODE`. The glasses remember the code after the first visit and remove it from the address. If you add it without the code, the app shows a lock screen where you can write or speak it instead. Use the main project address, not a preview link, as preview links can ask for a Vercel login.
 
 ## Using it
 
@@ -158,6 +159,7 @@ stops: [
 
 | Symptom | Likely cause |
 |---|---|
+| "Access code needed" or "Wrong access code" | The code on the glasses doesn't match `APP_CODE`. Re-enter it on the lock screen, or open the app once with `?code=` on the end |
 | A key shows `"set": false` | Missing or misnamed variable, or no redeploy since adding it |
 | "rejected the key" | The key is wrong or expired. Copy it again from the provider |
 | Trains error 404 | Your Live Departure Board endpoint differs from the default. Copy the full URL from the product page, ending in `GetDepBoardWithDetails` with no station code, into `RAILDATA_DEPARTURES_URL` |

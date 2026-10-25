@@ -1,6 +1,6 @@
 // Nearby bus stops (with NaPTAN ATCO codes) and railway stations (with CRS codes) from OpenStreetMap via Overpass.
 // No key needed.
-const { send, num, fetchT } = require('./_lib.js');
+const { send, num, fetchT, allowed } = require('./_lib.js');
 
 const ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
@@ -21,6 +21,7 @@ async function overpass(query) {
 }
 
 module.exports = async (req, res) => {
+  if (!allowed(req, res)) return;
   const lat = num(req.query.lat, -90, 90), lon = num(req.query.lon, -180, 180);
   if (lat === null || lon === null) return send(res, 400, { error: 'Missing location' });
   const type = req.query.type === 'rail' ? 'rail' : 'bus';

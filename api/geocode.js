@@ -1,6 +1,6 @@
 // Place search: postcodes via postcodes.io (official ONS data, no key), everything else via
 // openrouteservice (Pelias geocoder on OpenStreetMap). Searches all of Great Britain, nearest first.
-const { cleanKey, send, num, fetchT, upstreamError } = require('./_lib.js');
+const { cleanKey, send, num, fetchT, upstreamError, allowed } = require('./_lib.js');
 
 // Full postcode anywhere in the text (e.g. "12 High St GU1 3AA"), or an outward code on its own ("GU1")
 const FULL_PC = /\b([A-Z]{1,2}\d[A-Z\d]?)\s*(\d[A-Z]{2})\b/i;
@@ -72,6 +72,7 @@ async function placeSearch(text, lat, lon, key) {
 }
 
 module.exports = async (req, res) => {
+  if (!allowed(req, res)) return;
   const key = cleanKey(process.env.ORS_API_KEY);
   const text = String(req.query.text || '').trim().slice(0, 120);
   if (text.length < 2) return send(res, 400, { error: 'Search text too short' });

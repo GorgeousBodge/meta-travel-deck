@@ -88,19 +88,57 @@ function say(text, lang = 'en-GB') {
 }
 
 // ---------------------------------------------------------------- server calls
+// Access code (APP_CODE in Vercel). Open the app once as  https://…vercel.app/?code=YOURCODE
+// and it's remembered on the glasses; or enter it on the lock screen.
+(function captureCode() {
+  try {
+    const u = new URL(location.href);
+    const c = u.searchParams.get('code') || u.searchParams.get('c');
+    if (c) {
+      store.set('code', c.trim());
+      u.searchParams.delete('code'); u.searchParams.delete('c');
+      history.replaceState(history.state, '', u.pathname + (u.search || '') + u.hash);
+    }
+  } catch { /* ignore */ }
+})();
+
 async function api(path, params) {
-  const url = '/api/' + path + (params ? '?' + new URLSearchParams(params) : '');
+  const q = new URLSearchParams(params || {});
+  const code = store.get('code', '');
+  if (code) q.set('c', code);
+  const qs = q.toString();
+  const url = '/api/' + path + (qs ? '?' + qs : '');
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 20000);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
     const j = await r.json().catch(() => ({}));
+    if (r.status === 401 && j.locked) { showLock(j.error); throw new Error(j.error); }
     if (!r.ok) throw new Error(j.error || 'Server error ' + r.status);
     return j;
   } catch (e) {
     if (e.name === 'AbortError') throw new Error('Request timed out');
     throw e;
   } finally { clearTimeout(t); }
+}
+
+function showLock(msg) {
+  if (S.screen === 'lock') return;
+  stopTimers();
+  stopGuidance();
+  S.gen++;               // drop whatever the current screen was waiting for
+  S.screen = 'lock';
+  setHeader('Locked', 'Access code');
+  setHints([['Pinch', 'the box to write or speak the code']]);
+  app.innerHTML = `<div class="state">
+    <div class="state-title err">${esc(msg || 'Access code needed')}</div>
+    <div class="state-msg">Enter the access code set as APP_CODE in Vercel. It's remembered on these glasses.</div>
+    <label class="field-wrap" style="width:100%;max-width:460px">${icon('lock')}
+      <input id="codeIn" class="field" type="text" placeholder="Access code" aria-label="Access code" autocomplete="off" spellcheck="false">
+    </label>
+    ${key('saveCode', 'check', 'Unlock', { cls: 'key-speak' })}
+  </div>`;
+  requestAnimationFrame(() => { const i = $('#codeIn'); if (i) i.focus(); });
 }
 
 // ---------------------------------------------------------------- location
@@ -186,6 +224,7 @@ const ICONS = {
   swap: '<path d="M7 7h11l-3-3M17 17H6l3 3"/>',
   go: '<path d="M5 12h13M13 6l6 6-6 6"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
   retry: '<path d="M19 12a7 7 0 1 1-2.05-4.95M19 4.5V9h-4.5"/>',
 };
 const icon = (k) => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[k] || ''}</svg>`;
@@ -988,6 +1027,13 @@ function setKeyOn(b, on, label) {
 
 const ACTIONS = {
   noop() {},
+  saveCode() {
+    const v = ($('#codeIn') || {}).value || '';
+    if (!v.trim()) return toast('Enter the code first', 2500, true);
+    store.set('code', v.trim());
+    toast('Code saved');
+    render(history.state || { screen: 'home', depth: 1 });
+  },
   retry() { render(history.state || { screen: 'home', depth: 1 }); },
   goDest() { S.results = []; S.query = ''; lastSearch = ''; go('dest'); },
   goStations() { go('stations'); },
@@ -1104,3 +1150,4 @@ document.addEventListener('visibilitychange', () => {
 });
 history.replaceState({ screen: 'home', params: {}, depth: 1 }, '');
 render(history.state);
+api('status').catch(() => { /* shows the lock screen if a code is needed */ });

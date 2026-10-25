@@ -1,9 +1,10 @@
 // Walking / cycling directions via openrouteservice (OpenStreetMap)
-const { cleanKey, send, num, fetchT, upstreamError } = require('./_lib.js');
+const { cleanKey, send, num, fetchT, upstreamError, allowed } = require('./_lib.js');
 
 const PROFILES = new Set(['foot-walking', 'cycling-regular']);
 
 module.exports = async (req, res) => {
+  if (!allowed(req, res)) return;
   const key = cleanKey(process.env.ORS_API_KEY);
   if (!key) return send(res, 500, { error: 'ORS_API_KEY is not set in Vercel' });
 

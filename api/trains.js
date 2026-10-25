@@ -1,5 +1,5 @@
 // Live train departures from National Rail Darwin, via the Rail Data Marketplace "Live Departure Board" product
-const { cleanKey, send, fetchT, upstreamError } = require('./_lib.js');
+const { cleanKey, send, fetchT, upstreamError, allowed } = require('./_lib.js');
 
 const DEFAULT_URL = 'https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120/GetDepBoardWithDetails';
 
@@ -25,6 +25,7 @@ function mapService(s, bus) {
 }
 
 module.exports = async (req, res) => {
+  if (!allowed(req, res)) return;
   const key = cleanKey(process.env.RAILDATA_API_KEY);
   if (!key) return send(res, 500, { error: 'RAILDATA_API_KEY is not set in Vercel' });
 

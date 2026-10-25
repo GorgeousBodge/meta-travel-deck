@@ -48,4 +48,17 @@ async function upstreamError(r, name) {
   return `${name} error ${r.status}${detail ? ': ' + String(detail).slice(0, 140) : ''}`;
 }
 
-module.exports = { cleanKey, send, num, fetchT, upstreamError };
+// Access code: if APP_CODE is set in Vercel, every request must carry it (?c=CODE), or nothing runs.
+// The code is in the URL (not just a header) so cached responses can never be served to someone without it.
+const crypto = require('crypto');
+function allowed(req, res) {
+  const want = cleanKey(process.env.APP_CODE);
+  if (!want) return true; // no code set: open, as before
+  const got = cleanKey(req.query.c || req.headers['x-app-code'] || '');
+  const a = Buffer.from(want), b = Buffer.from(got);
+  const ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!ok) send(res, 401, { error: got ? 'Wrong access code' : 'Access code needed', locked: true });
+  return ok;
+}
+
+module.exports = { cleanKey, send, num, fetchT, upstreamError, allowed };

@@ -1,54 +1,173 @@
-# Nav Deck (Meta Ray-Ban Display)
+[README.md](https://github.com/user-attachments/files/33938389/README.md)
+# Nav Deck
 
-Walking and cycling directions on OpenStreetMap (openrouteservice) with a switchable street map, plus live train and bus departures anywhere in Great Britain.
-Plain HTML/CSS/JS, no build step. Secrets live only in Vercel environment variables and are used only by `api/`.
+Walking and cycling directions with live train and bus times for **Meta Ray-Ban Display** glasses. Turn-by-turn guidance on OpenStreetMap, a street map you can flick to for a sense of distance, and live departure boards for any station or bus stop in Great Britain. Built for the Display's 600×600 screen and the Neural Band.
 
-## Files
+- **Walk or cycle:** turn-by-turn directions with distance to the next turn, time left and arrival time
+- **Three map views:** route line only, a street map with road names, or zoomed out for the bigger picture
+- **Spoken turns:** optional voice prompts through the glasses speaker
+- **Search your way:** place names, streets, addresses or postcodes, by handwriting or voice
+- **Live trains:** National Rail departures with platforms, delays, cancellations and calling points
+- **Live buses:** real-time where operators provide it, timetabled times otherwise
+- **Finds what's near you:** nearest stations and stops from your phone's GPS, plus your saved ones
+- **Reroutes itself** if you go off course
+- **Keys stay on the server:** the page never sees your API keys
 
-| File | What it does |
+| Home | Guidance (street map) |
 |---|---|
-| `index.html`, `app.js` | The app (browser). No keys in here. |
-| `style.css` | Your shared deck style, unchanged. |
-| `nav.css` | Nav-specific layout on top of it. |
-| `streetmap.js` | Street map (MapLibre + OpenFreeMap, no key). Loads only when you switch to it. |
-| `places.js` | Your saved places, stations and bus stops — edit freely. |
-| `api/route.js` | Directions (openrouteservice) |
-| `api/geocode.js` | Search: postcodes via postcodes.io (no key), places/streets/addresses via openrouteservice |
-| `api/nearby.js` | Nearby bus stops and stations from OpenStreetMap (Overpass, no key) |
-| `api/trains.js` | Live trains (National Rail Darwin via Rail Data Marketplace) |
-| `api/buses.js` | Live buses (TransportAPI, which now runs Traveline NextBuses) |
-| `api/status.js` | Setup check — shows which keys are set, never their values |
-| `api/_lib.js` | Shared helpers (not a route) |
+| ![Home](docs/home.png) | ![Guidance](docs/guidance.png) |
 
-## Keys to get
+| Trains | Buses |
+|---|---|
+| ![Train departures](docs/trains.png) | ![Bus departures](docs/buses.png) |
 
-1. **openrouteservice** — sign up at openrouteservice.org, copy the token from the dashboard. Free tier.
-2. **Rail Data Marketplace** — sign up at raildata.org.uk, subscribe to **"Live Departure Board"** (the LDBWS one, not "Fastest"), copy the **Consumer key**. Free.
-   If the product page shows a different endpoint from `https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120/GetDepBoardWithDetails`, put that full URL (ending in `GetDepBoardWithDetails`, no station code) into `RAILDATA_DEPARTURES_URL`.
-3. **TransportAPI** (runs Traveline NextBuses since May 2026) — register at developer.transportapi.com. You get an **app ID** and **app key**; those cover bus times. The free plan allows **30 requests a day**, so the bus screen only checks when you press REFRESH, and each stop is cached for 90 s. On a paid plan, set `BUS_REFRESH_SECONDS` (e.g. `60`) to turn on auto-refresh.
+---
 
-## Vercel environment variables
+## Setup
+
+### 1. Copy the code
+Fork this repository, or create your own with these files:
+
+```
+index.html
+style.css
+nav.css
+app.js
+streetmap.js
+places.js
+api/_lib.js
+api/route.js
+api/geocode.js
+api/nearby.js
+api/trains.js
+api/buses.js
+api/status.js
+```
+
+### 2. Import it into Vercel
+Choose **Add New → Project** and import the repo.
+- **Framework preset:** Other
+- **Build command:** leave empty
+- **Output directory:** leave as default
+
+> Can't see the repo in Vercel? Click **Adjust GitHub App Permissions** on the import screen and give Vercel access to it.
+
+### 3. Get the keys
+All three have free plans.
+
+**Directions and search: openrouteservice (HEIGIT)**
+1. Sign up at [openrouteservice.org](https://openrouteservice.org) and open the dashboard.
+2. Copy your API key. It's fine if it ends in `=`.
+
+**Trains: Rail Data Marketplace**
+1. Register at [raildata.org.uk](https://raildata.org.uk) and confirm your email.
+2. Search the data products for **Live Departure Board** (by Rail Delivery Group). Use the plain one, not "Staff version" or "Live Next Departures Board".
+3. **Subscribe**, then open it from your subscriptions and copy the **Consumer key**.
+
+**Buses: TransportAPI (runs Traveline NextBuses)**
+1. Register at [developer.transportapi.com](https://developer.transportapi.com).
+2. Copy the **app ID** and **app key** from **My Apps**. You don't need the app name.
+3. The free plan allows **30 requests a day**, so the bus screen only checks when you press **Refresh**.
+
+### 4. Add them to Vercel
+In Vercel, go to **Settings → Environment Variables** and add:
 
 | Name | Value |
 |---|---|
-| `ORS_API_KEY` | openrouteservice token |
-| `RAILDATA_API_KEY` | Rail Data Marketplace consumer key |
-| `RAILDATA_DEPARTURES_URL` | optional — only if your product URL differs |
-| `TRANSPORTAPI_APP_ID` | TransportAPI app ID |
-| `TRANSPORTAPI_APP_KEY` | TransportAPI app key |
-| `BUS_REFRESH_SECONDS` | optional — paid plans only, turns on bus auto-refresh |
+| `ORS_API_KEY` | Your openrouteservice / HEIGIT key |
+| `RAILDATA_API_KEY` | Your Rail Data Marketplace consumer key |
+| `TRANSPORTAPI_APP_ID` | Your TransportAPI app ID |
+| `TRANSPORTAPI_APP_KEY` | Your TransportAPI app key |
+| `RAILDATA_DEPARTURES_URL` | *Optional.* Only if your Live Departure Board endpoint differs from the default (see Troubleshooting) |
+| `BUS_REFRESH_SECONDS` | *Optional, paid bus plans only.* Turns on bus auto-refresh, e.g. `60` |
 
-The server strips anything that isn't a letter or number from keys. Open `/api/status` after deploying:
-`strippedChars: true` means characters were removed — fine for stray spaces, but if that key then fails, it genuinely contains a symbol.
+Then **Redeploy** (Deployments → ⋯ → Redeploy). Vercel only picks up variable changes on a new deployment.
 
-Redeploy after adding or changing variables.
+### 5. Check it
+Open `https://YOUR-PROJECT.vercel.app/api/status`. You'll see raw data. Look for:
+- `"set": true` on each key.
+- `"strippedChars": false`. If it says `true`, the key had stray characters such as spaces removed. That's fine unless the key then stops working.
+
+Then try `https://YOUR-PROJECT.vercel.app/api/trains?crs=GLD` for a live Guildford board.
+
+### 6. Add it to your glasses
+In the Meta AI app, add a web app with the address `https://YOUR-PROJECT.vercel.app`. Use the main project address, not a preview link, as preview links can ask for a Vercel login.
 
 ## Using it
 
-- **Navigate** → pick a saved/recent place, or select the search box to write or speak a place, street, address or postcode (full postcodes like `GU1 4AA`, or areas like `GU1`). WALK/CYCLE tabs pick the mode.
-- **Preview** → START, swap mode, or SAVE the place.
-- **Guidance** → next turn, distance, remaining, ETA, heading-up map. **MAP** cycles ROUTE (route line only) → STREET (street map with names) → WIDE (zoomed out). If the glasses can't run the street map, it says so and stays on ROUTE. VOICE speaks turns; HEAD UP uses the glasses' compass if available (otherwise your direction of travel). Goes off-route → reroutes automatically.
-- **Trains / Buses** → nearest stations/stops by GPS, plus saved ones. Train boards refresh every 30 s; bus stops refresh when you press REFRESH (30 free checks a day). Pinch a train to see calling points. ★ saves it.
-- **Back** is the system Back gesture or the HUD back button.
+| Gesture | Where | Action |
+|---|---|---|
+| Swipe | Anywhere | Move between buttons and list items |
+| Pinch | Button or item | Select it |
+| Pinch | Search box | Write or speak a place, street, address or postcode |
+| Pinch | Walk / Cycle | Choose how you're travelling |
+| Pinch | Start | Begin guidance |
+| Pinch | Map | Switch between Route, Street and Wide views |
+| Pinch | Voice | Turn spoken directions on or off (amber = on) |
+| Pinch | Head up | Turn the map with your head, using the glasses' compass |
+| Pinch | A train | Show its calling points |
+| Pinch | Refresh | Check a bus stop again |
+| Pinch | Save / ★ | Keep a place, station or stop for next time |
+| Back | Anywhere | Go back a screen (the HUD back button does the same) |
 
-Map data © OpenStreetMap contributors. Train data: National Rail Enquiries. Bus data: Traveline NextBuses via TransportAPI.
+Train boards refresh every 30 seconds while open. Bus stops refresh when you press Refresh.
+
+---
+
+## Saved places, stations and stops
+
+You can save from inside the app, or set defaults in **`places.js`**:
+
+```js
+places: [
+  { name: 'Guildford Station', lat: 51.2369, lon: -0.5803 },
+  { name: 'Home', lat: 51.0000, lon: -0.5000 },
+],
+stations: [
+  { crs: 'GLD', name: 'Guildford' },
+],
+stops: [
+  { atco: '4000XXXXXXXX', name: 'Friary Bus Station (Stand 1)' },
+],
+```
+
+- **Coordinates:** right-click a spot on [openstreetmap.org](https://www.openstreetmap.org) and choose **Show address**.
+- **Station codes (CRS):** the three-letter code on any National Rail page, e.g. `GLD` for Guildford.
+- **Bus stop codes (ATCO):** click a stop on openstreetmap.org and look for `naptan:AtcoCode`, or find the stop on [bustimes.org](https://bustimes.org).
+- `centre` sets where searches are focused before you have a GPS fix.
+
+## Search tips
+- **Postcodes** are the most precise way to find a house: `GU1 4AA`, or `12 North Street GU1 4AA`. An area code on its own, such as `GU1`, takes you to the middle of that area.
+- **Places and streets** work well: "Guildford Cathedral", "Woodbridge Road".
+- **House numbers** are hit and miss. They come from OpenStreetMap, where only some UK addresses are mapped. If one isn't found, add the postcode.
+- Results nearest to you come first, and you can search anywhere in Great Britain.
+
+---
+
+## How it works
+
+- **Directions and search:** `api/route.js` and `api/geocode.js` call openrouteservice, which uses OpenStreetMap data. Postcodes go to [postcodes.io](https://postcodes.io), which uses official ONS data and needs no key.
+- **Street map:** `streetmap.js` draws OpenStreetMap roads from [OpenFreeMap](https://openfreemap.org) with MapLibre, restyled for the glasses: black is see-through on the Display, so roads are drawn as light and your route is brightest. It loads only the first time you switch to it. If the glasses can't run it (it needs WebGL), the app says so and stays on the route-line view.
+- **Nearby stations and stops:** `api/nearby.js` asks OpenStreetMap (Overpass) for stations within 25 km and bus stops within 700 m. Results are cached for a day.
+- **Trains:** `api/trains.js` uses National Rail's Darwin feed through Rail Data Marketplace. Cached for 20 seconds.
+- **Buses:** `api/buses.js` uses TransportAPI's live departures. Each stop is cached for 90 seconds, so going back and reopening it doesn't use up your daily allowance.
+- **Location** comes from your paired phone. Guidance follows your GPS, and the map turns to face your direction of travel, or your head direction with Head up.
+- **Privacy:** your location is only sent to the services above to plan routes and find what's nearby, and nothing is stored on the server. Saved and recent places live on the glasses.
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| A key shows `"set": false` | Missing or misnamed variable, or no redeploy since adding it |
+| "rejected the key" | The key is wrong or expired. Copy it again from the provider |
+| Trains error 404 | Your Live Departure Board endpoint differs from the default. Copy the full URL from the product page, ending in `GetDepBoardWithDetails` with no station code, into `RAILDATA_DEPARTURES_URL` |
+| "Bus allowance used up for today" | The free TransportAPI plan's 30 daily checks are used. It resets at midnight |
+| Buses show only "SCHED" times | That operator doesn't send live data, so timetable times are shown |
+| "Street map unavailable" | The glasses couldn't start WebGL, or the map couldn't load. The route-line view still works |
+| "Location timed out" | The glasses get GPS from your phone. Check the phone is connected and location is on for the Meta AI app |
+| No stations or stops found | The OpenStreetMap lookup was busy. Go back and try again |
+| Voice is silent | Check the glasses' volume and that Voice is amber |
+
+## Disclaimer
+
+An independent hobby project. Not affiliated with or endorsed by Meta, HEIGIT, Rail Delivery Group, National Rail, TransportAPI, Traveline or Vercel. Directions are a guide only: always follow road signs, crossings and local conditions, and stay aware of your surroundings. Map data © OpenStreetMap contributors. Train data: National Rail Enquiries. Bus data: Traveline NextBuses via TransportAPI.

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Walking and cycling directions with a street map, plus live train and bus times across Great Britain.">
+  <meta name="mrbd-web-app-capable" content="yes">
+  <title>Nav Deck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="nav.css">
+</head>
+<body>
+  <div class="frame">
+    <header class="hud">
+      <button class="hud-back focusable" id="back" type="button" aria-label="Back" hidden>
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>
+      </button>
+      <div class="hud-heading">
+        <span class="hud-title" id="title">Nav</span>
+        <span class="hud-sub" id="sub"></span>
+      </div>
+      <div class="hud-status">
+        <span class="status-dot" id="dot"></span>
+        <span id="gps">GPS</span>
+        <span class="hud-clock" id="clock">--:--</span>
+      </div>
+    </header>
+
+    <main class="stage">
+      <section class="view" id="app"></section>
+    </main>
+
+    <footer class="hints" id="hints"></footer>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <script src="places.js"></script>
+  <script src="streetmap.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

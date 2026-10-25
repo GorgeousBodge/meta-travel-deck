@@ -236,8 +236,19 @@ function updateGps() {
     return;
   }
   const age = (Date.now() - S.pos.t) / 1000;
-  el.textContent = age > 60 ? 'GPS LOST' : '±' + Math.round(S.pos.acc) + 'M';
-  dot.dataset.status = age > 60 ? 'offline' : S.pos.acc > 50 ? 'cached' : 'live';
+  const guiding = S.watch != null || S.sim != null;
+  const acc = '±' + Math.round(S.pos.acc) + 'M';
+  if (!guiding && age > 60) {
+    // Not navigating, so no live tracking: the last fix is just old, not lost
+    el.textContent = 'GPS'; dot.dataset.status = '';
+  } else if (S.geoErr && age > 20) {
+    el.textContent = 'GPS LOST'; dot.dataset.status = 'offline';
+  } else if (age > 45) {
+    // Standing still often means no new fixes; keep the last one, shown amber
+    el.textContent = acc; dot.dataset.status = 'cached';
+  } else {
+    el.textContent = acc; dot.dataset.status = S.pos.acc > 50 ? 'cached' : 'live';
+  }
 }
 function tick() { $('#clock').textContent = hhmm(new Date()); updateGps(); }
 setInterval(tick, 10000);
@@ -389,14 +400,16 @@ function dest() {
       <label class="field-wrap">${icon('search')}
         <input id="q" class="field" type="search" placeholder="Place, street or postcode" aria-label="Search for a place, street or postcode" value="${esc(S.query)}" autocomplete="off">
       </label>
+      <button class="key focusable clear-key" type="button" data-act="clearSearch" aria-label="Clear search" ${S.query ? '' : 'hidden'}>${icon('stop')}</button>
       <div class="tabs">${modeTab('foot-walking')}${modeTab('cycling-regular')}</div>
     </div>
     <div class="list" id="list"></div>`;
   fillDestList();
   const q = $('#q');
   let deb;
-  q.addEventListener('change', () => { clearTimeout(deb); search(q.value); });
-  q.addEventListener('input', () => { clearTimeout(deb); deb = setTimeout(() => search(q.value), 800); });
+  const showClear = () => { const c = app.querySelector('.clear-key'); if (c) c.hidden = !q.value.trim(); };
+  q.addEventListener('change', () => { clearTimeout(deb); showClear(); search(q.value); });
+  q.addEventListener('input', () => { clearTimeout(deb); showClear(); deb = setTimeout(() => search(q.value), 800); });
   focusFirst();
 }
 const modeTab = (m) => `<button class="tab ${S.mode === m ? 'is-active' : ''}" type="button" aria-pressed="${S.mode === m}" data-act="setMode" data-mode="${m}">${MODES[m].label}</button>`;
@@ -1114,6 +1127,14 @@ const ACTIONS = {
     } catch { /* lock screen already shown */ }
   },
   unlock() { showLock('Enter your access code'); },
+  clearSearch(d, b) {
+    const q = $('#q');
+    if (q) q.value = '';
+    S.query = ''; S.results = []; lastSearch = '';
+    b.hidden = true;
+    fillDestList();
+    if (q) q.focus();             // ready for the next search: pinch to write or speak
+  },
   demoMode() {
     S.demo = false;               // let enterDemo switch cleanly
     enterDemo();

@@ -472,19 +472,35 @@ const mapSlotHtml = () => `<div class="map-slot" id="mapSlot">
 const useStreet = () => S.mapMode !== 'route' && StreetMap.supported();
 const streetZoom = () => (S.mapMode === 'wide' ? MODES[S.route.mode].zWide : MODES[S.route.mode].zStreet);
 
+let mapToken = 0;
+// If the graphics context is ever lost, drop back to the route view instead of freezing
+StreetMap.onContextLost(() => {
+  S.mapMode = 'route';
+  store.set('mapMode', 'route');
+  toast('Street map stopped — showing route view', 4000, true);
+  updateMapKey();
+  refreshMapView();
+});
 async function refreshMapView() {
   const slot = $('#mapSlot');
   if (!slot || !S.route) return;
+  const token = ++mapToken;          // a newer switch cancels this one
   const gen = S.gen;
   const follow = S.screen === 'guide';
   const cv = $('#map'), tag = $('#mapTag'), attr = $('#mapAttr');
   if (useStreet()) {
-    cv.hidden = true;
-    tag.textContent = S.mapMode === 'wide' ? 'STREET · WIDE' : 'STREET';
-    attr.hidden = false;
+    if (!StreetMap.ready()) {
+      // Keep the route view on screen while the street map downloads and starts
+      cv.hidden = false;
+      drawMap({ follow });
+      tag.textContent = 'LOADING STREET MAP…';
+      slot.classList.add('street-loading');
+    }
     try {
       await StreetMap.mount(slot);
     } catch (e) {
+      if (token !== mapToken) return;
+      slot.classList.remove('street-loading');
       S.mapMode = 'route';
       store.set('mapMode', 'route');
       toast('Street map unavailable — ' + e.message, 4500, true);
@@ -492,10 +508,15 @@ async function refreshMapView() {
       if (gen === S.gen) refreshMapView();
       return;
     }
-    if (gen !== S.gen || !$('#mapSlot')) return;
+    if (token !== mapToken || gen !== S.gen || !$('#mapSlot') || !useStreet()) return;
+    slot.classList.remove('street-loading');
+    cv.hidden = true;
+    tag.textContent = S.mapMode === 'wide' ? 'STREET · WIDE' : 'STREET';
+    attr.hidden = false;
     StreetMap.setRoute(S.route);
     if (follow && S.pos) drawStreet(true); else StreetMap.fit(S.route);
   } else {
+    slot.classList.remove('street-loading');
     const street = slot.querySelector('.street');
     if (street) street.remove();
     cv.hidden = false;
@@ -666,6 +687,18 @@ function startSim() {
 function startGuidance() {
   if (S.demo) return startSim();
   if (S.watch != null || !navigator.geolocation) return;
+  // Back-up: if the live feed goes quiet, ask the phone directly every few seconds
+  S.poll = setInterval(() => {
+    if (S.polling || (S.pos && Date.now() - S.pos.t < 6000)) return;
+    S.polling = true;
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (p) => { S.polling = false; setPos(toPos(p)); progress(); },
+        () => { S.polling = false; },
+        { timeout: 8000 },
+      );
+    } catch { S.polling = false; }
+  }, 5000);
   S.watch = navigator.geolocation.watchPosition(
     (p) => { setPos(toPos(p)); progress(); },
     (e) => {
@@ -681,6 +714,7 @@ function startGuidance() {
 function stopGuidance() {
   if (S.watch != null) { navigator.geolocation.clearWatch(S.watch); S.watch = null; }
   if (S.sim) { clearInterval(S.sim); S.sim = null; }
+  if (S.poll) { clearInterval(S.poll); S.poll = null; S.polling = false; }
   stopCompass();
   try { if ('speechSynthesis' in window) speechSynthesis.cancel(); } catch { /* ignore */ }
 }
@@ -742,6 +776,10 @@ function updateGuide() {
   const r = S.route, v = r && r.view;
   const man = $('#man');
   if (!man) return;
+  if (!v && !S.pos) {
+    $('#manDist').textContent = '--';
+    $('#manInst').textContent = 'Waiting for GPS from your phone…';
+  }
   if (v) {
     const next = v.next;
     const off = r.offCount > 0;
@@ -765,7 +803,7 @@ function scheduleDraw() {
   requestAnimationFrame(() => {
     drawPending = false;
     if (S.screen !== 'guide') return;
-    if (useStreet()) drawStreet(false); else drawMap({ follow: true });
+    if (useStreet() && StreetMap.ready()) drawStreet(false); else drawMap({ follow: true });
   });
 }
 

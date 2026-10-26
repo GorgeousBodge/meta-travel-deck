@@ -266,3 +266,7 @@
 /* spans inside buttons stack as blocks */
 .row-main, .row-title, .row-sub, .dep-main, .dep-dest, .dep-sub { display: block; }
 .dest-top .field-wrap { min-width: 0; }
+
+/* Street map stays hidden (route view shows) until it has finished loading */
+.map-slot.street-loading .street { visibility: hidden; }
+.map-slot canvas.route-canvas[hidden] { display: none; }

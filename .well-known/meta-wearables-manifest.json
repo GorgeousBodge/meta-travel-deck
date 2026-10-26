@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "Nav Deck",
+  "description": "Walking and cycling directions with a street map, plus live train and bus times across Great Britain.",
+  "appearance": {
+    "theme_color": "#3FE0FF",
+    "icon": { "src": "nav-icon.svg", "type": "monochrome" },
+    "icon_background": {
+      "colors": ["#0E4552", "#082C35", "#041A20", "#020D10"],
+      "stops": [0.0, 0.33, 0.66, 1.0],
+      "inner_glow_color": "#3FE0FF"
+    }
+  }
+}

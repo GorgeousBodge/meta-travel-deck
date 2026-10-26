@@ -15,17 +15,25 @@ const StreetMap = (() => {
     fontBold: ['Noto Sans Bold'],
   };
 
-  let map = null, el = null, loading = null, failed = false, lastMove = 0;
+  let map = null, el = null, loading = null, failed = false, ready = false, lastMove = 0, onLost = null;
   let youMarker = null, destMarker = null, youEl = null;
 
   const empty = () => ({ type: 'FeatureCollection', features: [] });
   const line = (coords) => ({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} });
 
+  // Check for WebGL once and cache it. (Creating a test context on every check exhausts the
+  // browser's small pool of contexts, and then the street map's own context gets killed.)
+  let glChecked = null;
   function webgl() {
+    if (glChecked !== null) return glChecked;
     try {
       const c = document.createElement('canvas');
-      return !!(c.getContext('webgl2') || c.getContext('webgl'));
-    } catch { return false; }
+      const gl = c.getContext('webgl2') || c.getContext('webgl');
+      glChecked = !!gl;
+      const lose = gl && gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();   // hand the test context straight back
+    } catch { glChecked = false; }
+    return glChecked;
   }
 
   function loadLib() {
@@ -40,14 +48,16 @@ const StreetMap = (() => {
       s.onload = () => resolve();
       s.onerror = () => reject(new Error('Map library failed to load'));
       document.head.appendChild(s);
-      setTimeout(() => reject(new Error('Map library timed out')), 20000);
+      setTimeout(() => reject(new Error('Map library timed out')), 12000);
     });
   }
 
   // Read tile source + fonts from OpenFreeMap's own style so we don't depend on guessed URLs
   async function base() {
     try {
-      const r = await fetch(OFM_STYLE);
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 6000);
+      const r = await fetch(OFM_STYLE, { signal: ctrl.signal });
       const j = await r.json();
       const src = Object.values(j.sources || {}).find((s) => s && s.type === 'vector');
       const fonts = [];
@@ -132,9 +142,10 @@ const StreetMap = (() => {
         maxPitch: 0,
       });
       map.getCanvas().tabIndex = -1;
+      map.on('webglcontextlost', () => { failed = true; ready = false; if (typeof onLost === 'function') onLost(); });
       await new Promise((resolve, reject) => {
-        const t = setTimeout(() => reject(new Error('Street map timed out')), 20000);
-        map.once('load', () => { clearTimeout(t); resolve(); });
+        const t = setTimeout(() => reject(new Error('Street map timed out')), 12000);
+        map.once('load', () => { clearTimeout(t); ready = true; resolve(); });
       });
     })().catch((e) => { failed = true; throw e; });
     return loading;
@@ -196,6 +207,8 @@ const StreetMap = (() => {
 
   return {
     supported: () => !failed && webgl(),
+    ready: () => ready,
+    onContextLost: (fn) => { onLost = fn; },
     failed: () => failed,
     mount, setRoute, setProgress, fit, follow,
   };

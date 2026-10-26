@@ -113,6 +113,7 @@ const NavDemo = (() => {
       case 'status': return { demo: true };
       case 'geocode': return geocode(params.text);
       case 'route': return route(params);
+      case 'reverse': return { suggestion: '12 Bridge Street, GU1 4RY', sub: '12 Bridge Street, Guildford, GU1 4RY' };
       case 'nearby': return { results: params.type === 'rail' ? STATIONS : STOPS };
       case 'trains': return trains(String(params.crs || 'GLD').toUpperCase());
       case 'buses': return buses(params.atco);

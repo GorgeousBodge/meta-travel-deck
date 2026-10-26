@@ -1,4 +1,4 @@
-[README.md](https://github.com/user-attachments/files/33938969/README.md)
+[README.md](https://github.com/user-attachments/files/33979346/README.md)
 # Nav Deck
 
 Walking and cycling directions with live train and bus times for **Meta Ray-Ban Display** glasses. Turn-by-turn guidance on OpenStreetMap, a street map you can flick to for a sense of distance, and live departure boards for any station or bus stop in Great Britain. Built for the Display's 600×600 screen and the Neural Band.
@@ -40,6 +40,7 @@ icon-96.png
 api/_lib.js
 api/route.js
 api/geocode.js
+api/reverse.js
 api/nearby.js
 api/trains.js
 api/buses.js
@@ -81,7 +82,7 @@ In Vercel, go to **Settings → Environment Variables** and add:
 | `TRANSPORTAPI_APP_ID` | Your TransportAPI app ID |
 | `TRANSPORTAPI_APP_KEY` | Your TransportAPI app key |
 | `APP_CODE` | *Recommended.* Your own access code (letters and numbers). Without it, anyone with your address can use your allowances |
-| `RAILDATA_DEPARTURES_URL` | *Optional.* Only if your Live Departure Board endpoint differs from the default (see Troubleshooting) |
+| `RAILDATA_DEPARTURES_URL` | *Optional.* Only if your Live Departure Board address differs from `https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120/GetDepartureBoard/{crs}`. Paste it exactly as shown on the product page, `{crs}` included |
 | `BUS_REFRESH_SECONDS` | *Optional, paid bus plans only.* Turns on bus auto-refresh, e.g. `60` |
 
 Then **Redeploy** (Deployments → ⋯ → Redeploy). Vercel only picks up variable changes on a new deployment.
@@ -122,7 +123,9 @@ Without the access code, the app opens in **demo mode** (an amber **DEMO** light
 
 ## Saved places, stations and stops
 
-You can save from inside the app, or set defaults in **`places.js`**:
+**Save where you are:** on the Destination screen, pinch **Save where I am**. The app takes a precise fix, suggests the nearest address (house number and street where OpenStreetMap has it, plus the postcode), and lets you keep that name or write or speak your own, like "Mum's". Handy when search only knows the street. Pinch **New fix** if the accuracy shown is poor.
+
+Places saved in the app live on the glasses. To make one permanent, or to share it between devices, add it to `places.js`. You can also set defaults there:
 
 ```js
 places: [
@@ -167,7 +170,8 @@ stops: [
 | "Access code needed" or "Wrong access code" | The code on the glasses doesn't match `APP_CODE`. Re-enter it on the lock screen, or open the app once with `?code=` on the end |
 | A key shows `"set": false` | Missing or misnamed variable, or no redeploy since adding it |
 | "rejected the key" | The key is wrong or expired. Copy it again from the provider |
-| Trains error 404 | Your Live Departure Board endpoint differs from the default. Copy the full URL from the product page, ending in `GetDepBoardWithDetails` with no station code, into `RAILDATA_DEPARTURES_URL` |
+| Trains error 404 | Your Live Departure Board address differs from the default. Copy it from the product page into `RAILDATA_DEPARTURES_URL`, exactly as shown |
+| Trains show no calling points | Your subscription only includes the basic board. Times, platforms and delays still work |
 | "Bus allowance used up for today" | The free TransportAPI plan's 30 daily checks are used. It resets at midnight |
 | Buses show only "SCHED" times | That operator doesn't send live data, so timetable times are shown |
 | "Street map unavailable" | The glasses couldn't start WebGL, or the map couldn't load. The route-line view still works |

@@ -176,6 +176,7 @@ function setPos(p) {
   if (S.pos && haversine(S.pos, p) > Math.max(6, p.acc / 3)) S.course = bearing(S.pos, p);
   S.pos = p;
   S.geoErr = false;
+  S.geoDenied = false;
   updateGps();
 }
 function locate() {
@@ -188,8 +189,10 @@ function locate() {
     if (!navigator.geolocation) return reject(new Error('Location not supported'));
     let done = false;
     const finish = (fn, v) => { if (!done) { done = true; clearTimeout(timer); fn(v); } };
-    const fail = (msg) => {
-      S.geoErr = true; updateGps();
+    const fail = (msg, code) => {
+      S.geoErr = true;
+      if (code === 1) S.geoDenied = true;
+      updateGps();
       if (S.pos) { toast('Using last known position', 2500); finish(resolve, S.pos); }
       else finish(reject, new Error(msg));
     };
@@ -197,7 +200,7 @@ function locate() {
     try {
       navigator.geolocation.getCurrentPosition(
         (p) => { setPos(toPos(p)); finish(resolve, S.pos); },
-        (e) => fail(geoMsg(e)),
+        (e) => fail(geoMsg(e), e && e.code),
         { timeout: 12000 },
       );
     } catch (e) { fail('Location unavailable'); }
@@ -227,9 +230,13 @@ const HINTS = {
   board: [['Swipe', 'scroll'], ['Pinch', 'details'], ['Auto', '30 s']],
   bus: [['Swipe', 'scroll'], ['Refresh', 'when needed'], ['Back', 'return']],
 };
+// GPS indicator. Silence is not failure: indoors or standing still the phone often stops sending
+// updates, but the last position is still where you are. Only call it LOST after a long gap.
+const GPS_HOLD = 180;   // seconds a fix stays usable during guidance before it's "lost"
 function updateGps() {
   const el = $('#gps'), dot = $('#dot');
   if (S.demo) { el.textContent = 'DEMO'; dot.dataset.status = 'demo'; return; }
+  if (S.geoDenied) { el.textContent = 'NO PERMISSION'; dot.dataset.status = 'offline'; return; }
   if (!S.pos) {
     el.textContent = S.geoErr ? 'NO GPS' : 'GPS';
     dot.dataset.status = S.geoErr ? 'offline' : '';
@@ -238,16 +245,18 @@ function updateGps() {
   const age = (Date.now() - S.pos.t) / 1000;
   const guiding = S.watch != null || S.sim != null;
   const acc = '±' + Math.round(S.pos.acc) + 'M';
-  if (!guiding && age > 60) {
-    // Not navigating, so no live tracking: the last fix is just old, not lost
-    el.textContent = 'GPS'; dot.dataset.status = '';
-  } else if (S.geoErr && age > 20) {
+  if (!guiding) {
+    // Not navigating: no live tracking, so an older fix is just idle
+    el.textContent = age > 60 ? 'GPS' : acc;
+    dot.dataset.status = age > 60 ? '' : S.pos.acc > 50 ? 'cached' : 'live';
+  } else if (age > GPS_HOLD) {
     el.textContent = 'GPS LOST'; dot.dataset.status = 'offline';
-  } else if (age > 45) {
-    // Standing still often means no new fixes; keep the last one, shown amber
-    el.textContent = acc; dot.dataset.status = 'cached';
+  } else if (age > 30 || S.pos.acc > 50) {
+    // Holding the last fix (amber), with its age once it's over a minute old
+    el.textContent = age > 60 ? acc + ' ' + Math.floor(age / 60) + 'MIN' : acc;
+    dot.dataset.status = 'cached';
   } else {
-    el.textContent = acc; dot.dataset.status = S.pos.acc > 50 ? 'cached' : 'live';
+    el.textContent = acc; dot.dataset.status = 'live';
   }
 }
 function tick() { $('#clock').textContent = hhmm(new Date()); updateGps(); }
@@ -360,7 +369,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ---------------------------------------------------------------- saved things
-const savedPlaces = () => dedupe([...(CFG.places || []), ...store.get('saved', [])], (p) => p.name.toLowerCase());
+const savedPlaces = () => dedupe([...store.get('saved', []), ...(CFG.places || [])], (p) => p.name.toLowerCase());
 const favStations = () => dedupe([...(CFG.stations || []), ...store.get('favStations', [])], (s) => s.crs);
 const favStops = () => dedupe([...(CFG.stops || []), ...store.get('favStops', [])], (s) => s.atco);
 function dedupe(arr, k) { const seen = new Set(); return arr.filter((x) => x && !seen.has(k(x)) && seen.add(k(x))); }
@@ -432,8 +441,9 @@ function fillDestList(note) {
   };
   section('Results', 'pin', S.results);
   section('Saved', 'star', savedPlaces());
+  html += row('goSaveHere', 'locate', 'Save where I am', 'Add your current location to Saved', '', { attrs: first ? 'data-focus' : '' });
+  first = false;
   section('Recent', 'clock', store.get('recent', []).filter((r) => !savedPlaces().some((s) => s.name === r.name)));
-  if (!S.choices.length && !note) html += '<div class="notice">Select the search box to write or speak a place, street or postcode.</div>';
   list.innerHTML = html;
 }
 
@@ -702,10 +712,12 @@ function startGuidance() {
   S.watch = navigator.geolocation.watchPosition(
     (p) => { setPos(toPos(p)); progress(); },
     (e) => {
-      // Only complain if we've genuinely had no fix for a while (watch errors can be transient)
-      if (!S.pos || Date.now() - S.pos.t > 20000) {
+      // Watch errors are often just "no new position yet" (indoors, standing still): ignore those
+      // while the last fix is usable, and only speak up after a long gap or a permission problem
+      if (e && e.code === 1) { S.geoDenied = true; updateGps(); toast(geoMsg(e), 4000, true); return; }
+      if (!S.pos || Date.now() - S.pos.t > GPS_HOLD * 1000) {
         S.geoErr = true; updateGps();
-        if (Date.now() - (S.geoToastT || 0) > 30000) { S.geoToastT = Date.now(); toast(geoMsg(e), 3000, true); }
+        if (Date.now() - (S.geoToastT || 0) > 60000) { S.geoToastT = Date.now(); toast('No GPS update for a while — showing your last position', 3500, true); }
       }
     },
     { enableHighAccuracy: true },
@@ -1171,7 +1183,49 @@ function renderStop(j, atco, name, quiet) {
 }
 
 // ================================================================ ACTIONS
-const SCREENS = { home, dest, preview, guide, steps, stations, board, stops, stop };
+// ---------------- save where I am
+// Take the best of a few fixes, look up the nearest address to suggest a name, then let you keep it
+// or write/speak your own.
+async function saveHere() {
+  setHeader('Save place', 'Where I am');
+  setHints([['Pinch', 'the name to write or speak your own'], ['Back', 'cancel']]);
+  const gen = S.gen;
+  app.innerHTML = loading('Getting a precise fix');
+  let best = null;
+  try {
+    for (let i = 0; i < 3; i++) {
+      const p = await locate();
+      if (gen !== S.gen) return;
+      if (!best || p.acc < best.acc) best = { ...p };
+      if (best.acc <= 15) break;
+      stage(`Improving fix · ±${Math.round(best.acc)} m`);
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  } catch (e) {
+    if (gen !== S.gen) return;
+    if (!best) { app.innerHTML = errorView(e.message); focusFirst(); return; }
+  }
+  stage('Looking up address');
+  let info = { suggestion: 'Saved place', sub: '' };
+  try { info = await api('reverse', { lat: best.lat.toFixed(6), lon: best.lon.toFixed(6) }); } catch { /* name it yourself */ }
+  if (gen !== S.gen) return;
+  S.pending = { lat: +best.lat.toFixed(6), lon: +best.lon.toFixed(6), sub: info.sub || '', acc: best.acc };
+  const weak = best.acc > 30;
+  app.innerHTML = `<div class="state">
+    <div class="state-title">Save this spot</div>
+    <label class="field-wrap" style="width:100%;max-width:520px">${icon('star')}
+      <input id="nameIn" class="field" type="text" value="${esc(info.suggestion)}" aria-label="Name for this place" autocomplete="off">
+    </label>
+    <div class="card-meta" style="text-align:center">${esc(info.sub || 'No address found')}<br><b style="color:${weak ? 'var(--amber)' : 'var(--accent)'}">±${Math.round(best.acc)} m${weak ? ' · weak fix, try again outdoors' : ''}</b></div>
+    <div class="keys" style="grid-template-columns:1fr 1fr">
+      ${key('confirmSaveHere', 'check', 'Save', { cls: 'key-speak', attrs: 'data-focus' })}
+      ${key('retry', 'retry', 'New fix')}
+    </div>
+  </div>`;
+  focusFirst();
+}
+
+const SCREENS = { home, dest, preview, guide, steps, stations, board, stops, stop, saveHere };
 
 function setKeyOn(b, on, label) {
   b.classList.toggle('is-on', on);
@@ -1198,6 +1252,18 @@ const ACTIONS = {
     } catch { /* lock screen already shown */ }
   },
   unlock() { showLock('Enter your access code'); },
+  goSaveHere() { go('saveHere'); },
+  confirmSaveHere() {
+    const p = S.pending;
+    if (!p) return;
+    const name = (($('#nameIn') || {}).value || '').trim() || 'Saved place';
+    const list = store.get('saved', []).filter((x) => x.name.toLowerCase() !== name.toLowerCase());
+    list.unshift({ name, lat: p.lat, lon: p.lon, sub: p.sub });
+    store.set('saved', list.slice(0, 30));
+    S.pending = null;
+    toast('Saved: ' + name, 2500);
+    history.back();
+  },
   clearSearch(d, b) {
     const q = $('#q');
     if (q) q.value = '';

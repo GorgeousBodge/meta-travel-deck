@@ -104,7 +104,7 @@ function say(text, lang = 'en-GB') {
   } catch { /* ignore */ }
 })();
 
-async function api(path, params) {
+async function api(path, params, timeoutMs = 20000) {
   if (S.demo) return NavDemo.api(path, params || {});
   const q = new URLSearchParams(params || {});
   const code = store.get('code', '');
@@ -112,7 +112,7 @@ async function api(path, params) {
   const qs = q.toString();
   const url = '/api/' + path + (qs ? '?' + qs : '');
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 20000);
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const r = await fetch(url, { signal: ctrl.signal });
     const j = await r.json().catch(() => ({}));
@@ -968,6 +968,33 @@ async function requestCompass() {
 }
 
 // ---------------- trains
+// Nearby lookups: snap to a grid so nearby requests share the server's cached answer,
+// remember each answer on the glasses, and fall back to the remembered one if the finder is down.
+const GRID = { bus: 0.004, rail: 0.02 };
+async function nearby(type, pos) {
+  const g = GRID[type];
+  const glat = (Math.round(pos.lat / g) * g).toFixed(3), glon = (Math.round(pos.lon / g) * g).toFixed(3);
+  const cellKey = `${type}:${glat},${glon}`;
+  const cache = store.get('nearbyCache', {});
+  try {
+    const j = await api('nearby', { type, lat: glat, lon: glon }, 30000);
+    const results = j.results || [];
+    if (results.length) {
+      cache[cellKey] = { t: Date.now(), results };
+      const keys = Object.keys(cache).sort((a, b) => cache[b].t - cache[a].t).slice(0, 40);
+      store.set('nearbyCache', Object.fromEntries(keys.map((k) => [k, cache[k]])));
+    }
+    return { results, note: '' };
+  } catch (e) {
+    if (cache[cellKey]) return { results: cache[cellKey].results, note: `${type === 'rail' ? 'Station' : 'Stop'} finder busy, so showing what it found here last time.` };
+    // Nothing for this exact spot: use any remembered stops within 1 km
+    const all = Object.entries(cache).filter(([k]) => k.startsWith(type + ':')).flatMap(([, v]) => v.results);
+    const close = dedupe(all.filter((x) => haversine(pos, x) < 1000), (x) => x.atco || x.crs);
+    if (close.length) return { results: close, note: `${type === 'rail' ? 'Station' : 'Stop'} finder busy, so showing ${type === 'rail' ? 'stations' : 'stops'} remembered from nearby.` };
+    throw e;
+  }
+}
+
 async function stations() {
   setHeader('Trains', 'Stations');
   setHints(HINTS.list);
@@ -978,8 +1005,9 @@ async function stations() {
     const pos = await getPos();
     if (gen !== S.gen) return;
     stage('Finding stations');
-    const j = await api('nearby', { type: 'rail', lat: pos.lat.toFixed(3), lon: pos.lon.toFixed(3) });
-    near = (j.results || []).map((s) => ({ ...s, dist: haversine(pos, s) })).sort((a, b) => a.dist - b.dist);
+    const n = await nearby('rail', pos);
+    note = n.note;
+    near = n.results.map((s) => ({ ...s, dist: haversine(pos, s) })).sort((a, b) => a.dist - b.dist).slice(0, 8);
   } catch (e) { note = e.message; }
   if (gen !== S.gen) return;
   const r = (s, focus) => row('openBoard', 'train', s.name, s.crs, s.dist != null ? fmtDist(s.dist) : '',
@@ -1068,8 +1096,10 @@ async function stops() {
     const pos = await getPos();
     if (gen !== S.gen) return;
     stage('Finding stops');
-    const j = await api('nearby', { type: 'bus', lat: pos.lat.toFixed(4), lon: pos.lon.toFixed(4) });
-    near = (j.results || []).map((s) => ({ ...s, dist: haversine(pos, s) })).sort((a, b) => a.dist - b.dist).slice(0, 10);
+    const n = await nearby('bus', pos);
+    note = n.note;
+    near = n.results.map((s) => ({ ...s, dist: haversine(pos, s) })).filter((s) => s.dist < 800)
+      .sort((a, b) => a.dist - b.dist).slice(0, 10);
   } catch (e) { note = e.message; }
   if (gen !== S.gen) return;
   const r = (s, focus) => row('openStop', 'bus', s.name, [s.ind, s.bearing ? 'Heading ' + s.bearing : ''].filter(Boolean).join(' · '),
@@ -1079,6 +1109,9 @@ async function stops() {
   if (note) html += `<div class="notice">${esc(note)}</div>`;
   const favOnly = favStops().filter((f) => !near.some((n) => n.atco === f.atco));
   if (favOnly.length) html += '<div class="sec">// Saved</div>' + favOnly.map((s, i) => r(s, !near.length && i === 0)).join('');
+  const recent = store.get('recentStops', []).filter((x) => !near.some((n) => n.atco === x.atco) && !favOnly.some((f) => f.atco === x.atco));
+  if (recent.length) html += '<div class="sec">// Recent</div>' + recent.map((s, i) => r(s, !near.length && !favOnly.length && i === 0)).join('');
+  if (note && !near.length) html += key('retry', 'retry', 'Try again');
   app.innerHTML = `<div class="list">${html || '<div class="notice">No stops found nearby.</div>'}</div>`;
   focusFirst();
 }
@@ -1258,7 +1291,12 @@ const ACTIONS = {
   },
   endRoute() { S.route = null; stopGuidance(); history.back(); },
   openBoard(d) { go('board', { crs: d.crs, name: d.name }); },
-  openStop(d) { go('stop', { atco: d.atco, name: d.name }); },
+  openStop(d) {
+    const recent = store.get('recentStops', []).filter((x) => x.atco !== d.atco);
+    recent.unshift({ atco: d.atco, name: d.name });
+    store.set('recentStops', recent.slice(0, 6));
+    go('stop', { atco: d.atco, name: d.name });
+  },
   toggleCalls(d) {
     if (S.expanded.has(d.k)) S.expanded.delete(d.k); else S.expanded.add(d.k);
     if (S.lastBoard) {

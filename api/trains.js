@@ -1,7 +1,21 @@
 // Live train departures from National Rail Darwin, via the Rail Data Marketplace "Live Departure Board" product
 const { cleanKey, send, fetchT, upstreamError, allowed } = require('./_lib.js');
 
-const DEFAULT_URL = 'https://api1.raildata.org.uk/1010-live-departure-board-dep/LDBWS/api/20220120/GetDepBoardWithDetails';
+// The Live Departure Board product as listed on Rail Data Marketplace. Override with RAILDATA_DEPARTURES_URL
+// (paste it exactly as the product page shows it, "{crs}" and all).
+const DEFAULT_URL = 'https://api1.raildata.org.uk/1010-live-departure-board-dep1_2/LDBWS/api/20220120/GetDepartureBoard/{crs}';
+
+// Turn the configured URL into a list to try: the detailed board first (gives calling points), then the basic one.
+function candidates(raw) {
+  let u = String(raw || '').trim();
+  if (!/^https:\/\/[a-z0-9.-]+\.raildata\.org\.uk\//i.test(u)) u = DEFAULT_URL;
+  u = u.replace(/\/\{crs\}\/?$/i, '').replace(/\/+$/, '');
+  const m = u.match(/^(.*)\/(GetDepartureBoard|GetDepBoardWithDetails)$/i);
+  if (!m) return [u];
+  const root = m[1];
+  return [...new Set([root + '/GetDepBoardWithDetails', u])];
+}
+let working = null; // remembers which address worked, while this server instance is warm
 
 const strip = (s) => String(s || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const arr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
@@ -32,14 +46,19 @@ module.exports = async (req, res) => {
   const crs = String(req.query.crs || '').toUpperCase();
   if (!/^[A-Z]{3}$/.test(crs)) return send(res, 400, { error: 'Station code must be three letters' });
 
-  let base = String(process.env.RAILDATA_DEPARTURES_URL || DEFAULT_URL).trim().replace(/\/+$/, '');
-  if (!/^https:\/\/[a-z0-9.-]+\.raildata\.org\.uk\//i.test(base)) base = DEFAULT_URL;
+  const list = candidates(process.env.RAILDATA_DEPARTURES_URL);
+  const order = working && list.includes(working) ? [working, ...list.filter((u) => u !== working)] : list;
 
   try {
-    const r = await fetchT(`${base}/${crs}?numRows=12&timeWindow=120`, {
-      headers: { 'x-apikey': key, Accept: 'application/json' },
-    });
-    if (!r.ok) return send(res, 502, { error: await upstreamError(r, 'Rail Data Marketplace') });
+    let r, lastErr;
+    for (const base of order) {
+      r = await fetchT(`${base}/${crs}?numRows=12&timeWindow=120`, { headers: { 'x-apikey': key, Accept: 'application/json' } });
+      if (r.ok) { working = base; break; }
+      lastErr = await upstreamError(r, 'Rail Data Marketplace');
+      // 401/403/404 on the detailed board usually means it isn't part of your subscription: try the next one
+      if (![401, 403, 404].includes(r.status)) break;
+    }
+    if (!r || !r.ok) return send(res, 502, { error: lastErr || 'Rail Data Marketplace error' });
     const j = await r.json();
     const services = [
       ...arr(j.trainServices).map((s) => mapService(s, false)),

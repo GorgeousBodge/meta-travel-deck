@@ -177,9 +177,11 @@ function setPos(p) {
   S.pos = p;
   S.geoErr = false;
   S.geoDenied = false;
+  S.denyCount = 0;
   updateGps();
 }
-function locate() {
+// quiet: a background request (e.g. at launch). Its failures don't change the indicator or show messages.
+function locate(quiet = false) {
   if (S.demo) {
     if (!S.pos || !S.sim) setPos({ lat: NavDemo.start.lat, lon: NavDemo.start.lon, acc: 5, heading: null, speed: 0, t: Date.now() });
     return Promise.resolve(S.pos);
@@ -190,11 +192,15 @@ function locate() {
     let done = false;
     const finish = (fn, v) => { if (!done) { done = true; clearTimeout(timer); fn(v); } };
     const fail = (msg, code) => {
-      S.geoErr = true;
-      if (code === 1) S.geoDenied = true;
-      updateGps();
-      if (S.pos) { toast('Using last known position', 2500); finish(resolve, S.pos); }
-      else finish(reject, new Error(msg));
+      if (!quiet) {
+        S.geoErr = true;
+        // One refusal can be the runtime declining a request it didn't expect: only flag a real
+        // permission problem after two in a row from requests you started
+        if (code === 1) { S.denyCount = (S.denyCount || 0) + 1; if (S.denyCount >= 2) S.geoDenied = true; }
+        updateGps();
+      }
+      if (S.pos) { if (!quiet) toast('Using last known position', 2500); finish(resolve, S.pos); }
+      else finish(reject, new Error(code === 1 && !S.geoDenied ? 'Location was declined — try again' : msg));
     };
     const timer = setTimeout(() => fail('No location from your phone yet. Check the phone is nearby, connected, and location is on for the Meta AI app.'), 14000);
     try {
@@ -714,7 +720,11 @@ function startGuidance() {
     (e) => {
       // Watch errors are often just "no new position yet" (indoors, standing still): ignore those
       // while the last fix is usable, and only speak up after a long gap or a permission problem
-      if (e && e.code === 1) { S.geoDenied = true; updateGps(); toast(geoMsg(e), 4000, true); return; }
+      if (e && e.code === 1) {
+        S.denyCount = (S.denyCount || 0) + 1;
+        if (S.denyCount >= 2 && (!S.pos || Date.now() - S.pos.t > 30000)) { S.geoDenied = true; updateGps(); toast(geoMsg(e), 4000, true); }
+        return;
+      }
       if (!S.pos || Date.now() - S.pos.t > GPS_HOLD * 1000) {
         S.geoErr = true; updateGps();
         if (Date.now() - (S.geoToastT || 0) > 60000) { S.geoToastT = Date.now(); toast('No GPS update for a while — showing your last position', 3500, true); }
@@ -1401,5 +1411,5 @@ render(history.state);
 if (S.demo) toast('Demo mode · sample data', 3500);
 else {
   api('status').catch(() => { /* no code: demo mode; wrong code: lock screen */ });
-  locate().catch(() => { /* first fix in the background; screens retry when needed */ });
+  locate(true).catch(() => { /* first fix in the background; screens retry when needed */ });
 }
